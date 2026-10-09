@@ -1,0 +1,7 @@
+# PyTorch is installed separately (CPU wheels): pip install torch --index-url https://download.pytorch.org/whl/cpu
+numpy
+tokenizers
+matplotlib
+pytest
+ruff
+einops        # only for the optional comparison against the reference DeMo code

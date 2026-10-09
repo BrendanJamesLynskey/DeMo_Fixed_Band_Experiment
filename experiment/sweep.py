@@ -43,7 +43,7 @@ SIZES = {
     # GPU profile: the directions' size (about 16M parameters) and about 49M tokens per run
     "tinystories-gpu": dict(dataset="tinystories", n_layer=8, n_head=6, n_embd=384, block=256, batch=8,
                             steps=3000, warmup=200, calib_start=200, calib_steps=100, eval_every=200,
-                            diag_every=200, ckpt_every=200, threads=2),
+                            diag_every=200, ckpt_every=500, threads=2),
 }
 
 LR = {"adamw": 3e-3, "demo": 1e-3}                  # defaults, replaced by lr_choice.json when present

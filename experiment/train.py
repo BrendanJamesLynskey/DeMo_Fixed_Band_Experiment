@@ -32,6 +32,7 @@ import os
 import platform
 import sys
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -264,6 +265,8 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
         # kernel, so on a GPU the setting warns instead of failing (runs are close, not bit-equal)
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         torch.use_deterministic_algorithms(True, warn_only=True)
+        warnings.filterwarnings("ignore", message=".*does not have a deterministic implementation.*")
+        warnings.filterwarnings("ignore", message=".*defaults to a non-deterministic algorithm.*")
     else:
         torch.use_deterministic_algorithms(True)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -294,12 +297,14 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
 
     start, train_acc, train_n, elapsed = 0, 0.0, 0, 0.0
     if ckpt.exists():
-        s = torch.load(ckpt, weights_only=False, map_location=dev)
+        # load on the CPU: generator states must stay CPU byte tensors; load_state_dict moves the
+        # model and optimiser state to the parameters' device, and the DeMo state is moved here
+        s = torch.load(ckpt, weights_only=False, map_location="cpu")
         model.load_state_dict(s["model"])
         if opt:
             opt.load_state_dict(s["opt"])
         if st:
-            st.load(s["demo"])
+            st.load(_to_device(s["demo"], dev))
         shards.set_state(s["shards"])
         gen.set_state(s["gen"])
         start, train_acc, train_n, elapsed = s["step"], s["train_acc"], s["train_n"], s["elapsed"]
@@ -371,6 +376,17 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
     log.close()
     ckpt.unlink(missing_ok=True)
     return out
+
+
+def _to_device(obj, dev: torch.device):
+    """Move every tensor in a nested structure of dicts, lists and tuples to a device."""
+    if isinstance(obj, torch.Tensor):
+        return obj.to(dev)
+    if isinstance(obj, dict):
+        return {k: _to_device(v, dev) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(_to_device(v, dev) for v in obj)
+    return obj
 
 
 def resolve_device(name: str) -> torch.device:

@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import torch
 
-import compressors as C
 import train as T
 
 REF = Path(os.environ.get("DEMO_REF", Path(__file__).resolve().parents[2] / "_demo_ref_src" / "DeMo" / "demo.py"))

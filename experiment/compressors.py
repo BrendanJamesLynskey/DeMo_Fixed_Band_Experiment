@@ -80,20 +80,27 @@ class Chunker:
         self.is2d = len(self.chunk_shape) == 2
         self.m = math.prod(self.chunk_shape)
 
+    # Every method accepts either one tensor of self.shape, or a stack of them with one leading
+    # batch dimension (the workers); chunk outputs then carry the same leading dimension.
+    def _lead(self, x: torch.Tensor, ndim: int) -> tuple:
+        return tuple(x.shape[:1]) if x.dim() == ndim + 1 else ()
+
     def to_chunks(self, x: torch.Tensor) -> torch.Tensor:
         """Values grouped by chunk, (chunks, m), in the same layout as the coefficients."""
+        b = self._lead(x, len(self.shape))
         if self.is2d:
             r, c = self.shape
-            t = x.reshape(r // self.h, self.h, c // self.w, self.w).permute(0, 2, 1, 3)
-            return t.reshape(-1, self.m)
-        return x.reshape(-1, self.m)
+            t = x.reshape(*b, r // self.h, self.h, c // self.w, self.w).transpose(-3, -2)
+            return t.reshape(*b, -1, self.m)
+        return x.reshape(*b, -1, self.m)
 
     def from_chunks(self, t: torch.Tensor) -> torch.Tensor:
+        b = self._lead(t, 2)
         if self.is2d:
             r, c = self.shape
-            t = t.reshape(r // self.h, c // self.w, self.h, self.w).permute(0, 2, 1, 3)
-            return t.reshape(self.shape)
-        return t.reshape(self.shape)
+            t = t.reshape(*b, r // self.h, c // self.w, self.h, self.w).transpose(-3, -2)
+            return t.reshape(*b, *self.shape)
+        return t.reshape(*b, *self.shape)
 
     def transform_matrix(self) -> torch.Tensor:
         """The whole per-chunk transform as one (m x m) matrix acting on a flattened chunk."""
@@ -102,15 +109,16 @@ class Chunker:
         return self.d
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
+        chunks = self.to_chunks(x)
         if self.is2d:
-            t = self.to_chunks(x).reshape(-1, self.h, self.w)
-            return (self.dh @ t @ self.dw.T).reshape(-1, self.m)
-        return self.to_chunks(x) @ self.d.T
+            t = chunks.reshape(*chunks.shape[:-1], self.h, self.w)
+            return (self.dh @ t @ self.dw.T).reshape(chunks.shape)
+        return chunks @ self.d.T
 
     def decode(self, coef: torch.Tensor) -> torch.Tensor:
         if self.is2d:
-            t = coef.reshape(-1, self.h, self.w)
-            return self.from_chunks((self.dh.T @ t @ self.dw).reshape(-1, self.m))
+            t = coef.reshape(*coef.shape[:-1], self.h, self.w)
+            return self.from_chunks((self.dh.T @ t @ self.dw).reshape(coef.shape))
         return self.from_chunks(coef @ self.d)
 
     @property

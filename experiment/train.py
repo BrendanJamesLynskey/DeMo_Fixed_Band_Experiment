@@ -107,7 +107,9 @@ class DeMoState:
         self.cfg = cfg
         dev = self.device = next(iter(params.values())).device
         self.ch, self.k, self.pos = {}, {}, {}
-        self.delta = {n: [torch.zeros_like(p) for _ in range(cfg.workers)] for n, p in params.items()}
+        # one stacked tensor per parameter: worker w's delta is delta[n][w]
+        self.delta = {n: torch.zeros((cfg.workers, *p.shape), dtype=p.dtype, device=p.device)
+                      for n, p in params.items()}
         self.energy = {}
         self.sumsq = {n: 0.0 for n in params}
         self.count = {n: 0 for n in params}
@@ -117,7 +119,7 @@ class DeMoState:
         self.shadow = {n: torch.zeros_like(p) for n, p in params.items()}
         self.calibrated = cfg.variant not in ("calib", "optics")
         for n, p in params.items():
-            ch = C.Chunker(p.shape, cfg.chunk_mode, cfg.chunk, device=dev)
+            ch = C.Chunker(p.shape, cfg.chunk_mode, cfg.chunk, dtype=p.dtype, device=dev)
             self.ch[n] = ch
             self.k[n] = C.keep_count(ch.m, cfg.keep)
             shape = cfg.band if cfg.band in ("low", "zigzag", "high", "random") else "low"
@@ -156,6 +158,8 @@ class DeMoState:
     def load(self, s):
         self.delta, self.energy, self.sumsq, self.count = s["delta"], s["energy"], s["sumsq"], s["count"]
         self.shadow = s["shadow"]
+        # checkpoints written before the workers were batched hold a list of tensors per parameter
+        self.delta = {n: torch.stack(v) if isinstance(v, list) else v for n, v in self.delta.items()}
         self.pos, self.calibrated = s["pos"], s["calibrated"]
         cfg = self.cfg
         for n, (scale, clipped, total) in s["emu"].items():
@@ -165,42 +169,43 @@ class DeMoState:
 
 
 @torch.no_grad()
-def demo_step(st: DeMoState, params: dict, grads: list[dict], lr: float, step: int, gen: torch.Generator,
+def demo_step(st: DeMoState, params: dict, grads: dict, lr: float, step: int, gen: torch.Generator,
               diag: bool = False):
+    """One DeMo step for every tensor. grads[n] stacks the workers' gradients, (W, *shape); all
+    workers are processed together (the same arithmetic as a loop over workers)."""
     cfg = st.cfg
     W = cfg.workers
     calibrating = not st.calibrated and step >= cfg.calib_start
     for n, p in params.items():
         ch, k = st.ch[n], st.k[n]
-        idx_list, val_list = [], []
-        for w in range(W):
-            d = st.delta[n][w]
-            d.mul_(cfg.decay).add_(grads[w][n], alpha=lr)
-            coef = ch.encode(d)
-            if w == 0:
-                st.shadow[n].mul_(cfg.decay).add_(grads[0][n], alpha=lr)
-                if diag:
-                    st.diag_coef[n] = {"delta": coef.clone(),               # what DeMo compresses
-                                       "momentum": ch.encode(st.shadow[n]),  # plain momentum
-                                       "grad": ch.encode(grads[0][n])}
-            if calibrating:
-                st.energy[n] += (coef.double() ** 2).sum(0)
-                st.sumsq[n] += float((d.double() ** 2).sum())
-                st.count[n] += d.numel()
-            if cfg.variant == "topk":
-                idx, val = C.topk_select(coef, k)
-            else:
-                idx = st.pos[n].expand(ch.chunks, k)
-                val = coef[:, st.pos[n]]
-            # what reaches the wire: in E, the band as the emulated optics computes it
-            optics = cfg.variant == "optics" and st.calibrated and not st.emu[n].is_exact
-            tx = st.emu[n](ch.to_chunks(d), gen) if optics else val
-            # error feedback: the sender removes the exact coefficients of the band it sent (in E
-            # it cannot see the optics' noise, so the noise is not fed back)
-            d.sub_(ch.decode(torch.zeros_like(coef).scatter_(-1, idx, val)))
-            idx_list.append(idx)
-            val_list.append(tx)
-        agg = C.scatter_mean(ch.chunks, ch.m, idx_list, val_list, p.dtype)
+        d, g = st.delta[n], grads[n]                                 # (W, *shape)
+        d.mul_(cfg.decay).add_(g, alpha=lr)
+        coef = ch.encode(d)                                          # (W, chunks, m)
+        st.shadow[n].mul_(cfg.decay).add_(g[0], alpha=lr)
+        if diag:
+            st.diag_coef[n] = {"delta": coef[0].clone(),                 # what DeMo compresses
+                               "momentum": ch.encode(st.shadow[n]),      # plain momentum
+                               "grad": ch.encode(g[0])}
+        if calibrating:
+            st.energy[n] += (coef.double() ** 2).sum((0, 1))
+            st.sumsq[n] += float((d.double() ** 2).sum())
+            st.count[n] += d.numel()
+        if cfg.variant == "topk":
+            idx, val = C.topk_select(coef, k)                        # (W, chunks, k)
+        else:
+            idx = st.pos[n].expand(W, ch.chunks, k)
+            val = coef[..., st.pos[n]]
+        # what reaches the wire: in E, the band as the emulated optics computes it
+        if cfg.variant == "optics" and st.calibrated and not st.emu[n].is_exact:
+            tx = st.emu[n](ch.to_chunks(d).reshape(W * ch.chunks, ch.m), gen).reshape(W, ch.chunks, k)
+        else:
+            tx = val
+        # error feedback: each sender removes the exact coefficients it sent (in E it cannot see
+        # the optics' noise, so the noise is not fed back)
+        d.sub_(ch.decode(torch.zeros_like(coef).scatter_(-1, idx, val)))
+        # every worker's contributions to a chunk, side by side: worker 0's k, then worker 1's ...
+        agg = C.scatter_mean(ch.chunks, ch.m, [idx.transpose(0, 1).reshape(ch.chunks, W * k)],
+                             [tx.transpose(0, 1).reshape(ch.chunks, W * k)], p.dtype)
         p.add_(ch.decode(agg).sign(), alpha=-lr)
     if calibrating and step + 1 >= cfg.calib_start + cfg.calib_steps:
         st.finish_calibration()
@@ -294,6 +299,7 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
         wire = (W - 1) * payload                            # ring all-gather, per worker
         payload64 = st.payload_bytes_int64() if cfg.variant == "topk" else payload
     gen = torch.Generator(device=dev).manual_seed(cfg.seed + 777)
+    gbuf = {n: torch.zeros((W, *p.shape), dtype=p.dtype, device=dev) for n, p in params.items()}
 
     start, train_acc, train_n, elapsed = 0, 0.0, 0, 0.0
     if ckpt.exists():
@@ -327,24 +333,25 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
     session_start = time.time()
     for step in range(start, cfg.steps):
         lr = lr_at(cfg, step)
-        grads, loss_sum = [], 0.0
+        loss_sum = 0.0
         for w in range(W):
             x, y = (t.to(dev) for t in shards.batch_for(w))
             model.zero_grad(set_to_none=True)
             loss = model(x, y)
             loss.backward()
             loss_sum += float(loss.detach())
-            grads.append({n: p.grad.detach().clone() for n, p in params.items()})
+            for n, p in params.items():
+                gbuf[n][w].copy_(p.grad)
         train_acc += loss_sum / W
         train_n += 1
         if opt:
             for g in opt.param_groups:
                 g["lr"] = lr
             for n, p in params.items():
-                p.grad = sum(gr[n] for gr in grads) / W
+                p.grad = gbuf[n].mean(0)
             opt.step()
         else:
-            demo_step(st, {n: p.detach() for n, p in params.items()}, grads, lr, step, gen,
+            demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
                       diag=(step + 1) % cfg.diag_every == 0)
 
         done = step + 1

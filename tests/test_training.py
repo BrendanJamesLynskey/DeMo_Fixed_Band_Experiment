@@ -15,8 +15,9 @@ REF = Path(os.environ.get("DEMO_REF", Path(__file__).resolve().parents[2] / "_de
 
 
 def _grads(params, workers, seed):
+    """Stacked per-worker gradients, {name: (workers, *shape)}."""
     g = torch.Generator().manual_seed(seed)
-    return [{n: torch.randn(p.shape, generator=g) for n, p in params.items()} for _ in range(workers)]
+    return {n: torch.randn((workers, *p.shape), generator=g) for n, p in params.items()}
 
 
 @pytest.mark.skipif(not REF.exists(), reason="reference DeMo code not checked out (set DEMO_REF)")
@@ -46,7 +47,7 @@ def test_topk_variant_matches_the_reference_demo_update():
     for step in range(3):
         grads = _grads(ours, 1, seed=step)
         for p, n in zip(ref_params, shapes):
-            p.grad = grads[0][n].clone()
+            p.grad = grads[n][0].clone()
         opt.step()
         T.demo_step(st, ours, grads, lr, step, torch.Generator())
         for p, n in zip(ref_params, shapes):
@@ -117,3 +118,49 @@ def test_resume_from_a_checkpoint_gives_the_same_run(tmp_path, monkeypatch):
     T.run(cfg, part)
     resumed = _records(part)
     assert [r for r in resumed if r["type"] == "eval"] == [r for r in whole if r["type"] == "eval"]
+
+
+@pytest.mark.parametrize("variant", ["topk", "band"])
+def test_batched_workers_match_a_loop_over_workers(variant):
+    """The batched DeMo step against a plain loop over workers, written out from the paper."""
+    import compressors as C
+    shapes = {"w": (128, 192), "v": (128,)}
+    W, lr, decay = 3, 1e-3, 0.999
+    init = {n: torch.randn(s, generator=torch.Generator().manual_seed(7), dtype=torch.float64) for n, s in shapes.items()}
+    ours = {n: v.clone() for n, v in init.items()}
+    st = T.DeMoState(T.RunConfig(variant=variant, workers=W, decay=decay), ours)
+    ref = {n: v.clone() for n, v in init.items()}
+    deltas = {n: [torch.zeros(s, dtype=torch.float64) for _ in range(W)] for n, s in shapes.items()}
+    for step in range(3):
+        grads = {n: g.double() for n, g in _grads(ref, W, seed=20 + step).items()}
+        T.demo_step(st, ours, grads, lr, step, torch.Generator())
+        for n in shapes:
+            ch, k = st.ch[n], st.k[n]
+            idx_l, val_l = [], []
+            for w in range(W):
+                d = deltas[n][w]
+                d.mul_(decay).add_(grads[n][w], alpha=lr)
+                coef = ch.encode(d)
+                if variant == "topk":
+                    idx, val = C.topk_select(coef, k)
+                else:
+                    idx = st.pos[n].expand(ch.chunks, k)
+                    val = coef[:, st.pos[n]]
+                d.sub_(ch.decode(torch.zeros_like(coef).scatter_(-1, idx, val)))
+                idx_l.append(idx)
+                val_l.append(val)
+            agg = C.scatter_mean(ch.chunks, ch.m, idx_l, val_l, torch.float64)
+            ref[n].add_(ch.decode(agg).sign(), alpha=-lr)
+            assert torch.allclose(ours[n], ref[n], atol=1e-12), (variant, step, n)
+            for w in range(W):
+                assert torch.allclose(st.delta[n][w], deltas[n][w], atol=1e-12)
+
+
+def test_chunker_handles_a_batch_of_tensors():
+    import compressors as C
+    for mode, size in (("2d", 64), ("1d", 256)):
+        ch = C.Chunker(torch.Size((128, 192)), mode, size, dtype=torch.float64)
+        x = torch.randn(4, 128, 192, dtype=torch.float64)
+        batched = ch.encode(x)
+        assert torch.allclose(batched, torch.stack([ch.encode(x[i]) for i in range(4)]), atol=1e-12)
+        assert torch.allclose(ch.decode(batched), x, atol=1e-12)

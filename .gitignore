@@ -1,0 +1,7 @@
+.venv/
+data/
+results/ckpt/
+results/synthetic*/
+__pycache__/
+*.pyc
+.pytest_cache/

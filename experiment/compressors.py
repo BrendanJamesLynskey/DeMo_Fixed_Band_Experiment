@@ -61,18 +61,19 @@ class Chunker:
     position index means the same frequency in every chunk of the tensor.
     """
 
-    def __init__(self, shape: torch.Size, mode: str, size: int, dtype=torch.float32):
+    def __init__(self, shape: torch.Size, mode: str, size: int, dtype=torch.float32, device=None):
         self.shape = tuple(shape)
+        self.device = torch.device(device or "cpu")
         self.mode = mode
         if mode == "2d" and len(self.shape) == 2:
             r, c = self.shape
             self.h, self.w = largest_divisor_at_most(r, size), largest_divisor_at_most(c, size)
-            self.dh, self.dw = dct_matrix(self.h, dtype), dct_matrix(self.w, dtype)
+            self.dh, self.dw = dct_matrix(self.h, dtype).to(self.device), dct_matrix(self.w, dtype).to(self.device)
             self.chunk_shape = (self.h, self.w)
         elif mode in ("1d", "2d"):
             n = math.prod(self.shape)
             self.m = largest_divisor_at_most(n, size)
-            self.d = dct_matrix(self.m, dtype)
+            self.d = dct_matrix(self.m, dtype).to(self.device)
             self.chunk_shape = (self.m,)
         else:
             raise ValueError(mode)
@@ -170,7 +171,7 @@ def topk_select(coef: torch.Tensor, k: int):
 def scatter_mean(chunks: int, m: int, idx_list, val_list, dtype) -> torch.Tensor:
     """Combine every worker's sparse coefficients: the mean of the contributions at each position
     (positions nobody sent stay zero). This is DeMo's aggregation (scatter_reduce, "mean")."""
-    out = torch.zeros(chunks, m, dtype=dtype)
+    out = torch.zeros(chunks, m, dtype=dtype, device=idx_list[0].device)
     idx = torch.cat(idx_list, dim=-1)
     val = torch.cat(val_list, dim=-1)
     out.scatter_reduce_(-1, idx, val, reduce="mean", include_self=False)
@@ -225,8 +226,8 @@ class OpticsEmulator:
         if side > cfg.native or side & (side - 1):
             raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
         self.cfg = cfg
-        self.ch, self.positions = chunker, positions
-        self.t_band = chunker.transform_matrix()[positions]                # (k, m)
+        self.ch, self.positions = chunker, positions.to(chunker.device)
+        self.t_band = chunker.transform_matrix()[self.positions]           # (k, m)
         self.fs_out = float(chunker.transform_matrix().double().abs().sum(dim=1).max())
         self.scale_in: float | None = None
         self.clipped = 0
@@ -252,7 +253,7 @@ class OpticsEmulator:
         if p is None:
             y = self._band(x)
             if self.cfg.enob is not None:
-                y = y + torch.randn(y.shape, generator=gen, dtype=y.dtype) * self.plane_noise_rms()
+                y = y + torch.randn(y.shape, generator=gen, dtype=y.dtype, device=y.device) * self.plane_noise_rms()
             return y.to(chunks.dtype)
         assert self.scale_in is not None, "calibrate() first"
         qmax = 2 ** (p - 1) - 1
@@ -262,12 +263,12 @@ class OpticsEmulator:
         self.total += q.numel()
         q = q.clamp(-qmax, qmax).to(torch.int64)
         u = q & ((1 << p) - 1)                                   # two's-complement bit patterns
-        bits = torch.arange(p)
+        bits = torch.arange(p, device=x.device)
         planes = ((u.unsqueeze(0) >> bits.view(-1, 1, 1)) & 1).to(x.dtype)   # (P, n, m): exact binary (NRZ) input
         out = self._band(planes.reshape(-1, planes.shape[-1])).reshape(p, x.shape[0], -1)   # one pass per plane
         sigma = self.plane_noise_rms()
         if sigma:
-            out = out + torch.randn(out.shape, generator=gen, dtype=out.dtype) * sigma
+            out = out + torch.randn(out.shape, generator=gen, dtype=out.dtype, device=out.device) * sigma
         weight = 2.0 ** bits.to(out.dtype)
         weight[-1] = -weight[-1]                                 # the MSB carries the sign
         y = (weight.view(-1, 1, 1) * out).sum(0)

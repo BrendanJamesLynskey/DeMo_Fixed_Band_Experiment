@@ -70,7 +70,7 @@ class GPT(nn.Module):
 
     def forward(self, idx, targets=None):
         t = idx.shape[1]
-        x = self.wte(idx) + self.wpe(torch.arange(t))
+        x = self.wte(idx) + self.wpe(torch.arange(t, device=idx.device))
         for blk in self.blocks:
             x = blk(x)
         logits = self.ln_f(x) @ self.wte.weight.T

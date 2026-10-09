@@ -47,6 +47,8 @@ python3 -m venv .venv
 .venv/bin/python experiment/analyse.py --dataset tinystories
 ```
 
+**On a GPU (Colab):** open [colab/run_sweep.ipynb](https://colab.research.google.com/github/BrendanJamesLynskey/DeMo_Fixed_Band_Experiment/blob/main/colab/run_sweep.ipynb), choose a GPU runtime and *Run all*. It keeps the repository, data and checkpoints in Google Drive and runs the `tinystories-gpu` profile (8 layers, width 384, about 16M parameters, 3,000 steps); a reconnect and *Run all* resumes.
+
 Runs resume from checkpoints, and the sweep retries a run that crashed. The Jenkinsfile runs lint, the tests and a smoke run of every variant on synthetic data, with an optional nightly sweep.
 
 ## The reference DeMo code

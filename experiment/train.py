@@ -76,6 +76,7 @@ class RunConfig:
     diag_every: int = 50
     ckpt_every: int = 100
     threads: int = 4
+    device: str = "auto"             # auto: CUDA when available, else CPU
     extra: dict = field(default_factory=dict)
 
     def name(self) -> str:
@@ -103,6 +104,7 @@ class DeMoState:
 
     def __init__(self, cfg: RunConfig, params: dict[str, torch.Tensor]):
         self.cfg = cfg
+        dev = self.device = next(iter(params.values())).device
         self.ch, self.k, self.pos = {}, {}, {}
         self.delta = {n: [torch.zeros_like(p) for _ in range(cfg.workers)] for n, p in params.items()}
         self.energy = {}
@@ -114,12 +116,12 @@ class DeMoState:
         self.shadow = {n: torch.zeros_like(p) for n, p in params.items()}
         self.calibrated = cfg.variant not in ("calib", "optics")
         for n, p in params.items():
-            ch = C.Chunker(p.shape, cfg.chunk_mode, cfg.chunk)
+            ch = C.Chunker(p.shape, cfg.chunk_mode, cfg.chunk, device=dev)
             self.ch[n] = ch
             self.k[n] = C.keep_count(ch.m, cfg.keep)
             shape = cfg.band if cfg.band in ("low", "zigzag", "high", "random") else "low"
-            self.pos[n] = C.band_order(ch.chunk_shape, shape, seed=cfg.seed)[: self.k[n]]
-            self.energy[n] = torch.zeros(ch.m, dtype=torch.float64)
+            self.pos[n] = C.band_order(ch.chunk_shape, shape, seed=cfg.seed)[: self.k[n]].to(dev)
+            self.energy[n] = torch.zeros(ch.m, dtype=torch.float64, device=dev)
 
     def payload_bytes(self) -> int:
         """Bytes each worker originates per step."""
@@ -237,7 +239,8 @@ def _captured(st: DeMoState, params: dict, src: str) -> dict:
             energy += e
             tot["topk"] += e * C.captured_energy(coef, None, k)
             for shape in ("low", "zigzag", "high", "random"):
-                tot[shape] += e * C.captured_energy(coef, C.band_order(ch.chunk_shape, shape, seed=st.cfg.seed)[:k], k)
+                pos = C.band_order(ch.chunk_shape, shape, seed=st.cfg.seed)[:k].to(st.device)
+                tot[shape] += e * C.captured_energy(coef, pos, k)
             if st.calibrated and st.cfg.band == "calib":
                 tot["calib"] += e * C.captured_energy(coef, st.pos[n], k)
         if energy:
@@ -254,16 +257,23 @@ def evaluate(model, batches) -> float:
 
 
 def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
+    dev = resolve_device(cfg.device)
     torch.set_num_threads(cfg.threads)
-    torch.use_deterministic_algorithms(True)
+    if dev.type == "cuda":
+        # cuBLAS needs this for reproducible matmuls; scatter_reduce has no deterministic CUDA
+        # kernel, so on a GPU the setting warns instead of failing (runs are close, not bit-equal)
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+        torch.use_deterministic_algorithms(True, warn_only=True)
+    else:
+        torch.use_deterministic_algorithms(True)
     out.parent.mkdir(parents=True, exist_ok=True)
     ckpt = ROOT / "results" / "ckpt" / (out.stem + ".pt")
     ckpt.parent.mkdir(parents=True, exist_ok=True)
 
     train_ids, val_ids, vocab, meta = D.load(cfg.dataset)
     shards = D.Shards(train_ids, cfg.workers, cfg.block, cfg.batch, cfg.seed)
-    vbatches = D.val_batches(val_ids, cfg.block, cfg.batch, cfg.eval_batches)
-    model = GPT(GPTConfig(vocab, cfg.block, cfg.n_layer, cfg.n_head, cfg.n_embd), seed=cfg.seed)
+    vbatches = [(x.to(dev), y.to(dev)) for x, y in D.val_batches(val_ids, cfg.block, cfg.batch, cfg.eval_batches)]
+    model = GPT(GPTConfig(vocab, cfg.block, cfg.n_layer, cfg.n_head, cfg.n_embd), seed=cfg.seed).to(dev)
     params = dict(model.named_parameters())
     n_params = model.n_params()
     W = cfg.workers
@@ -280,11 +290,11 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
         payload = st.payload_bytes()
         wire = (W - 1) * payload                            # ring all-gather, per worker
         payload64 = st.payload_bytes_int64() if cfg.variant == "topk" else payload
-    gen = torch.Generator().manual_seed(cfg.seed + 777)
+    gen = torch.Generator(device=dev).manual_seed(cfg.seed + 777)
 
     start, train_acc, train_n, elapsed = 0, 0.0, 0, 0.0
     if ckpt.exists():
-        s = torch.load(ckpt, weights_only=False)
+        s = torch.load(ckpt, weights_only=False, map_location=dev)
         model.load_state_dict(s["model"])
         if opt:
             opt.load_state_dict(s["opt"])
@@ -302,7 +312,8 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
                   "data": meta, "payload_bytes_per_step": payload, "payload_bytes_int64_per_step": payload64,
                   "wire_bytes_per_step": wire, "dense_bytes_per_step": n_params * C.VALUE_BYTES,
                   "hardware": {"machine": platform.machine(), "processor": platform.processor() or _cpu_name(),
-                               "threads": cfg.threads, "torch": torch.__version__, "python": platform.python_version()}}
+                               "threads": cfg.threads, "torch": torch.__version__, "python": platform.python_version(),
+                               "device": torch.cuda.get_device_name(dev) if dev.type == "cuda" else "cpu"}}
         out.write_text(json.dumps(header) + "\n")
 
     clip_mark = (0, 0)
@@ -313,7 +324,7 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
         lr = lr_at(cfg, step)
         grads, loss_sum = [], 0.0
         for w in range(W):
-            x, y = shards.batch_for(w)
+            x, y = (t.to(dev) for t in shards.batch_for(w))
             model.zero_grad(set_to_none=True)
             loss = model(x, y)
             loss.backward()
@@ -360,6 +371,12 @@ def run(cfg: RunConfig, out: Path, max_seconds: float | None = None) -> Path:
     log.close()
     ckpt.unlink(missing_ok=True)
     return out
+
+
+def resolve_device(name: str) -> torch.device:
+    if name == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(name)
 
 
 def _cpu_name() -> str:

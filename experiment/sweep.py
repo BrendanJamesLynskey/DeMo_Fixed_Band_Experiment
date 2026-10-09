@@ -40,6 +40,10 @@ SIZES = {
     "tinystories": dict(dataset="tinystories", n_layer=6, n_head=6, n_embd=192, block=256, batch=4,
                         steps=1500, warmup=100, calib_start=100, calib_steps=50, eval_every=100,
                         diag_every=100, ckpt_every=100),
+    # GPU profile: the directions' size (about 16M parameters) and about 49M tokens per run
+    "tinystories-gpu": dict(dataset="tinystories", n_layer=8, n_head=6, n_embd=384, block=256, batch=8,
+                            steps=3000, warmup=200, calib_start=200, calib_steps=100, eval_every=200,
+                            diag_every=200, ckpt_every=200, threads=2),
 }
 
 LR = {"adamw": 3e-3, "demo": 1e-3}                  # defaults, replaced by lr_choice.json when present
@@ -62,6 +66,8 @@ def grid(name: str, dataset: str, seeds=(0, 1, 2)) -> list[RunConfig]:
 
     if name == "lr":
         short = dict(steps=LR_STEPS, warmup=50, calib_start=50, eval_every=100, diag_every=100, ckpt_every=100)
+        if dataset.endswith("-gpu"):
+            short = dict(steps=800, warmup=100, calib_start=100, eval_every=200, diag_every=200, ckpt_every=200)
         return ([cfg("adamw", 0, lr=lr, **short) for lr in LR_GRID["adamw"]] +
                 [cfg("topk", 0, lr=lr, keep=1 / 16, **short) for lr in LR_GRID["demo"]])
 
@@ -123,8 +129,11 @@ def commit(paths: list[Path], message: str, push: bool = False) -> None:
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT).returncode:
         subprocess.run(["git", "commit", "-q", "-m", message], cwd=ROOT, check=True)
     if push:
-        # a failed push (network) must not stop the sweep; the next push carries this commit too
-        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=ROOT)
+        # Another machine may have pushed results meanwhile: rebase onto it and retry once. A failed
+        # push (network) must not stop the sweep; the next push carries this commit too.
+        if subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=ROOT).returncode:
+            if subprocess.run(["git", "pull", "-q", "--rebase", "origin", "main"], cwd=ROOT).returncode == 0:
+                subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=ROOT)
 
 
 def run_grid(runs: list[RunConfig], outdir: str, a) -> None:

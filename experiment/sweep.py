@@ -5,9 +5,13 @@ PyTorch kernels) costs at most the steps since the last checkpoint: the run is r
 from it. A run whose results/<name>.jsonl ends in a "done" record is skipped. With --commit, each
 completed run's results are committed to git as soon as it finishes.
 
+The "all" grid is the whole experiment, unattended: a learning-rate sweep (short runs, kept in
+results/<dataset>-lr/), an automatic choice of the rate with the lowest final validation loss for
+each optimiser (results/<dataset>/lr_choice.json), then the main grid at those rates.
+
 Usage:
   python experiment/sweep.py --grid smoke              # list with --dry-run first
-  python experiment/sweep.py --grid main --commit
+  python experiment/sweep.py --grid all --dataset tinystories --commit --push
 """
 
 from __future__ import annotations
@@ -38,15 +42,28 @@ SIZES = {
                         diag_every=100, ckpt_every=100),
 }
 
-LR = {"adamw": 3e-3, "demo": 1e-3}
+LR = {"adamw": 3e-3, "demo": 1e-3}                  # defaults, replaced by lr_choice.json when present
+LR_GRID = {"adamw": (1e-3, 3e-3), "demo": (3e-4, 1e-3, 3e-3)}
+LR_STEPS = 400
+
+
+def chosen_lr(dataset: str) -> dict:
+    f = RESULTS / dataset / "lr_choice.json"
+    return {**LR, **json.loads(f.read_text())} if f.exists() else dict(LR)
 
 
 def grid(name: str, dataset: str, seeds=(0, 1, 2)) -> list[RunConfig]:
     base = SIZES[dataset]
+    lrs = chosen_lr(dataset)
 
     def cfg(variant, seed, **kw):
-        lr = LR["adamw" if variant == "adamw" else "demo"]
-        return RunConfig(variant=variant, seed=seed, lr=lr, **{**base, **kw})
+        lr = lrs["adamw" if variant == "adamw" else "demo"]
+        return RunConfig(variant=variant, seed=seed, **{"lr": lr, **base, **kw})
+
+    if name == "lr":
+        short = dict(steps=LR_STEPS, warmup=50, calib_start=50, eval_every=100, diag_every=100, ckpt_every=100)
+        return ([cfg("adamw", 0, lr=lr, **short) for lr in LR_GRID["adamw"]] +
+                [cfg("topk", 0, lr=lr, keep=1 / 16, **short) for lr in LR_GRID["demo"]])
 
     keep = 1 / 16
     runs: list[RunConfig] = []
@@ -75,6 +92,25 @@ def grid(name: str, dataset: str, seeds=(0, 1, 2)) -> list[RunConfig]:
     return runs
 
 
+def pick_lr(dataset: str) -> dict:
+    """The rate with the lowest final validation loss in the learning-rate sweep, per optimiser."""
+    best: dict[str, tuple[float, float]] = {}
+    for p in (RESULTS / f"{dataset}-lr").glob("*.jsonl"):
+        recs = [json.loads(ln) for ln in p.read_text().splitlines()]
+        if recs[-1].get("type") != "done":
+            continue
+        c = recs[0]["config"]
+        key = "adamw" if c["variant"] == "adamw" else "demo"
+        loss = [r for r in recs if r["type"] == "eval"][-1]["val_loss"]
+        if key not in best or loss < best[key][1]:
+            best[key] = (c["lr"], loss)
+    choice = {k: v[0] for k, v in best.items()}
+    (RESULTS / dataset).mkdir(parents=True, exist_ok=True)
+    (RESULTS / dataset / "lr_choice.json").write_text(json.dumps(
+        {**choice, "_val_loss": {k: v[1] for k, v in best.items()}}, indent=1) + "\n")
+    return choice
+
+
 def is_done(path: Path) -> bool:
     if not path.exists():
         return False
@@ -82,39 +118,27 @@ def is_done(path: Path) -> bool:
     return bool(lines) and json.loads(lines[-1]).get("type") == "done"
 
 
-def commit(paths: list[Path], message: str) -> None:
+def commit(paths: list[Path], message: str, push: bool = False) -> None:
     subprocess.run(["git", "add", "--", *map(str, paths)], cwd=ROOT, check=True)
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT).returncode:
         subprocess.run(["git", "commit", "-q", "-m", message], cwd=ROOT, check=True)
+    if push:
+        # a failed push (network) must not stop the sweep; the next push carries this commit too
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=ROOT)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--grid", default="smoke")
-    ap.add_argument("--dataset", default="shakespeare", choices=sorted(SIZES))
-    ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--commit", action="store_true")
-    ap.add_argument("--retries", type=int, default=5)
-    ap.add_argument("--one", help=argparse.SUPPRESS)          # internal: run one JSON config
-    a = ap.parse_args(argv)
-
-    if a.one:
-        cfg = RunConfig(**json.loads(a.one))
-        run(cfg, RESULTS / a.dataset / (cfg.name() + ".jsonl"))
-        return
-
-    runs = grid(a.grid, a.dataset)
-    todo = [c for c in runs if not is_done(RESULTS / a.dataset / (c.name() + ".jsonl"))]
-    print(f"{len(runs)} runs in grid '{a.grid}' on {a.dataset}; {len(todo)} to do")
+def run_grid(runs: list[RunConfig], outdir: str, a) -> None:
+    todo = [c for c in runs if not is_done(RESULTS / outdir / (c.name() + ".jsonl"))]
+    print(f"{len(runs)} runs for results/{outdir}; {len(todo)} to do", flush=True)
     if a.dry_run:
         for c in todo:
             print("  ", c.name(), c.steps, "steps")
         return
     for c in todo:
-        out = RESULTS / a.dataset / (c.name() + ".jsonl")
+        out = RESULTS / outdir / (c.name() + ".jsonl")
         for attempt in range(a.retries + 1):
             t = time.time()
-            r = subprocess.run([sys.executable, __file__, "--dataset", a.dataset, "--one",
+            r = subprocess.run([sys.executable, __file__, "--outdir", outdir, "--one",
                                 json.dumps(dataclasses.asdict(c))], cwd=ROOT)
             if is_done(out):
                 print(f"done {c.name()} in {time.time() - t:.0f} s", flush=True)
@@ -124,7 +148,38 @@ def main(argv=None):
             print(f"giving up on {c.name()}", flush=True)
             continue
         if a.commit:
-            commit([out], f"Results: {a.dataset} {c.name()}")
+            commit([out], f"Results: {outdir} {c.name()}", a.push)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--grid", default="smoke")
+    ap.add_argument("--dataset", default="shakespeare", choices=sorted(SIZES))
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--commit", action="store_true")
+    ap.add_argument("--push", action="store_true")
+    ap.add_argument("--outdir", default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--retries", type=int, default=5)
+    ap.add_argument("--one", help=argparse.SUPPRESS)          # internal: run one JSON config
+    a = ap.parse_args(argv)
+
+    if a.one:
+        cfg = RunConfig(**json.loads(a.one))
+        run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+        return
+
+    if a.grid == "all":
+        run_grid(grid("lr", a.dataset), f"{a.dataset}-lr", a)
+        if a.dry_run:
+            return
+        choice = pick_lr(a.dataset)
+        print(f"learning rates chosen: {choice}", flush=True)
+        if a.commit:
+            commit([RESULTS / a.dataset / "lr_choice.json"], f"Results: {a.dataset} learning-rate choice", a.push)
+        for stage in ("core", "optics", "shapes"):
+            run_grid(grid(stage, a.dataset), a.dataset, a)
+        return
+    run_grid(grid(a.grid, a.dataset), a.dataset if a.grid != "lr" else f"{a.dataset}-lr", a)
 
 
 if __name__ == "__main__":

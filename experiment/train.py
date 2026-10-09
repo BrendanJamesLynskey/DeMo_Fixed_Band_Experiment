@@ -86,7 +86,7 @@ class RunConfig:
             parts += [f"k{round(1 / self.keep)}", f"{self.chunk_mode}{self.chunk}"]
         if self.variant == "optics":
             parts += [f"enob{self.enob}", f"p{self.planes}"]
-        parts.append(f"s{self.seed}")
+        parts += [f"lr{self.lr:g}", f"s{self.seed}"]
         return "-".join(str(p) for p in parts)
 
 

@@ -136,3 +136,13 @@ def test_native_size_limit():
     ch = C.Chunker(torch.Size((512, 512)), "1d", 512)
     with pytest.raises(ValueError):
         C.OpticsEmulator(ch, torch.arange(4), C.OpticsConfig(8, 8, 4.0, 256))
+
+
+def test_pow2_chunking_for_widths_that_are_not_powers_of_2():
+    # a 384-vector (LayerNorm at width 384): DeMo's rule gives runs of 192, the optics needs 128
+    assert C.Chunker(torch.Size((384,)), "1d", 256).m == 192
+    ch = C.Chunker(torch.Size((384,)), "1d", 256, pow2=True)
+    assert ch.m == 128
+    C.OpticsEmulator.check(ch, 256)
+    assert C.Chunker(torch.Size((384, 384)), "2d", 64, pow2=True).chunk_shape == (64, 64)
+    assert C.Chunker(torch.Size((384, 1536)), "1d", 256, pow2=True).m == 256

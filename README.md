@@ -23,7 +23,7 @@ All compressed variants keep the same fraction of coefficients (1/16).
 
 Chunks are DeMo's 2-D 64x64 tiles, or 1-D runs of 64 or 256 values (the module does 1xN radix-4 transforms; its FHE run split 65,536-point NTTs into 256-point ones).
 
-**Emulated optics (E).** Each value enters as a P-bit two's-complement integer against a fixed full scale, calibrated once as kappa times the RMS of the delta over the calibration window (a sum of squares: no comparisons), with saturation; the clip rate is logged. Each bit plane passes through the transform separately, as binary (NRZ) input, and its readout gets Gaussian noise of RMS FS x 2^-ENOB x 2/sqrt(12), FS the readout full scale (fixed by the transform). The planes are recombined with weights 2^b, the top plane negative. ENOB is swept over 6, 8, 10 and 12; P over 4, 8 and 12 (P is also the number of optical passes). The sender cannot see the optics' noise, so its error feedback removes the exact band.
+**Emulated optics (E).** Each value enters as a P-bit two's-complement integer against a fixed full scale, calibrated once as kappa times the RMS of the delta over the calibration window (a sum of squares: no comparisons), with saturation; the clip rate is logged. Each bit plane passes through the transform separately, as binary (NRZ) input, and its readout gets Gaussian noise of RMS FS x 2^-ENOB x 2/sqrt(12), FS the readout full scale (fixed by the transform). The planes are recombined with weights 2^b, the top plane negative. ENOB is swept over 6, 8, 10 and 12; P over 4, 8 and 12 (P is also the number of optical passes). The sender cannot see the optics' noise, so its error feedback removes the exact band. The optics accepts only power-of-2 chunk sides, so E cuts each tensor into the largest power-of-2 runs that divide it; at width 384 that changes only the 17 LayerNorm vectors (6,528 parameters), which E cuts into runs of 128 where C, following DeMo's rule, uses 192.
 
 **Diagnostics.** Every 100 steps, on worker 0: the share of energy kept by top-k and by each band shape at the same k, for a plain momentum (never compressed), for the delta DeMo actually compresses, and for the gradient.
 
@@ -41,7 +41,7 @@ Chunks are DeMo's 2-D 64x64 tiles, or 1-D runs of 64 or 256 values (the module d
 python3 -m venv .venv
 .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
 .venv/bin/pip install -r requirements.txt
-.venv/bin/pytest tests                                        # 29 tests
+.venv/bin/pytest tests                                        # 34 tests
 .venv/bin/python experiment/sweep.py --grid smoke --dataset shakespeare
 .venv/bin/python experiment/sweep.py --grid all --dataset tinystories --commit   # the whole experiment
 .venv/bin/python experiment/analyse.py --dataset tinystories

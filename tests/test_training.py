@@ -164,3 +164,14 @@ def test_chunker_handles_a_batch_of_tensors():
         batched = ch.encode(x)
         assert torch.allclose(batched, torch.stack([ch.encode(x[i]) for i in range(4)]), atol=1e-12)
         assert torch.allclose(ch.decode(batched), x, atol=1e-12)
+
+
+def test_optics_state_builds_for_width_384():
+    """The tinystories-gpu width: every tensor must chunk to power-of-2 sides at setup, so a bad
+    side fails at once rather than when calibration ends."""
+    shapes = {"w": (384, 384), "fc": (1536, 384), "ln": (384,)}
+    params = {n: torch.zeros(s) for n, s in shapes.items()}
+    cfg = T.RunConfig(variant="optics", band="low", chunk_mode="1d", chunk=256, workers=2)
+    st = T.DeMoState(cfg, params)
+    assert st.ch["ln"].m == 128 and st.ch["w"].m == 256
+    st.finish_calibration()

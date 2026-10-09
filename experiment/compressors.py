@@ -50,29 +50,41 @@ def largest_divisor_at_most(n: int, target: int) -> int:
     return best
 
 
+def largest_pow2_divisor_at_most(n: int, target: int) -> int:
+    """The largest power of 2 that divides n and does not exceed target (sides the module's
+    radix-2/4 transforms can do)."""
+    d = 1
+    while n % (2 * d) == 0 and 2 * d <= target:
+        d *= 2
+    return d
+
+
 class Chunker:
     """Chunk a tensor and DCT each chunk.
 
     mode "2d": a matrix (R x C) is cut into h x w tiles, h and w the largest divisors of R and C
     not above ``size``; vectors fall back to 1-D runs. mode "1d": the flattened tensor is cut into
-    runs of length m, the largest divisor of numel not above ``size``.
+    runs of length m, the largest divisor of numel not above ``size``. With ``pow2``, every side is
+    instead the largest power-of-2 divisor (the emulated optics accepts only those).
 
     ``encode`` returns coefficients shaped (chunks, m) with each chunk flattened row-major, so a
     position index means the same frequency in every chunk of the tensor.
     """
 
-    def __init__(self, shape: torch.Size, mode: str, size: int, dtype=torch.float32, device=None):
+    def __init__(self, shape: torch.Size, mode: str, size: int, dtype=torch.float32, device=None,
+                 pow2: bool = False):
         self.shape = tuple(shape)
+        side = largest_pow2_divisor_at_most if pow2 else largest_divisor_at_most
         self.device = torch.device(device or "cpu")
         self.mode = mode
         if mode == "2d" and len(self.shape) == 2:
             r, c = self.shape
-            self.h, self.w = largest_divisor_at_most(r, size), largest_divisor_at_most(c, size)
+            self.h, self.w = side(r, size), side(c, size)
             self.dh, self.dw = dct_matrix(self.h, dtype).to(self.device), dct_matrix(self.w, dtype).to(self.device)
             self.chunk_shape = (self.h, self.w)
         elif mode in ("1d", "2d"):
             n = math.prod(self.shape)
-            self.m = largest_divisor_at_most(n, size)
+            self.m = side(n, size)
             self.d = dct_matrix(self.m, dtype).to(self.device)
             self.chunk_shape = (self.m,)
         else:
@@ -229,10 +241,14 @@ class OpticsEmulator:
     training (no comparisons at run time).
     """
 
+    @staticmethod
+    def check(chunker: Chunker, native: int) -> None:
+        for side in chunker.chunk_shape:
+            if side > native or side & (side - 1):
+                raise ValueError(f"chunk side {side} must be a power of 2 no larger than {native}")
+
     def __init__(self, chunker: Chunker, positions: torch.Tensor, cfg: OpticsConfig):
-        side = max(chunker.chunk_shape)
-        if side > cfg.native or side & (side - 1):
-            raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+        self.check(chunker, cfg.native)
         self.cfg = cfg
         self.ch, self.positions = chunker, positions.to(chunker.device)
         self.t_band = chunker.transform_matrix()[self.positions]           # (k, m)

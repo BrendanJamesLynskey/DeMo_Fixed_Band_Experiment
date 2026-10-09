@@ -119,7 +119,11 @@ class DeMoState:
         self.shadow = {n: torch.zeros_like(p) for n, p in params.items()}
         self.calibrated = cfg.variant not in ("calib", "optics")
         for n, p in params.items():
-            ch = C.Chunker(p.shape, cfg.chunk_mode, cfg.chunk, dtype=p.dtype, device=dev)
+            # the optics takes power-of-2 sides only: a 384-vector is cut into runs of 128, not 192
+            ch = C.Chunker(p.shape, cfg.chunk_mode, cfg.chunk, dtype=p.dtype, device=dev,
+                           pow2=cfg.variant == "optics")
+            if cfg.variant == "optics":
+                C.OpticsEmulator.check(ch, cfg.native)          # fail at start, not after calibration
             self.ch[n] = ch
             self.k[n] = C.keep_count(ch.m, cfg.keep)
             shape = cfg.band if cfg.band in ("low", "zigzag", "high", "random") else "low"

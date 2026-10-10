@@ -98,6 +98,29 @@
    "sort": []
   },
   {
+   "group": "tinystories-optics-low-k16-1d256-enobNone-pNone-lr0.001",
+   "label": "E  DeMo, band via emulated optics, 1-D 256-point chunks, perfect optics (no quantisation or noise: C with power-of-2 chunks)",
+   "variant": "optics",
+   "seeds": 1,
+   "final_val": 3.1405079662799835,
+   "final_val_sd": 0.0,
+   "payload_per_step": 1979184,
+   "payload_int64_per_step": 1979184,
+   "wire_per_step": 13854288,
+   "ratio_vs_dense": 16.0,
+   "steps_to_target": null,
+   "reached": "0/1",
+   "seconds": 2145.476739883423,
+   "clip_rate": 0.0,
+   "clip_rate_last": 0.0,
+   "sort": [
+    "exact",
+    0,
+    0,
+    99
+   ]
+  },
+  {
    "group": "tinystories-optics-low-k16-1d256-enob8.0-p4-lr0.001",
    "label": "E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 8, 4 planes, full scale fixed, feedback of the exact band",
    "variant": "optics",

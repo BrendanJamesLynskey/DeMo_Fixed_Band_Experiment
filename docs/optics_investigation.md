@@ -39,7 +39,7 @@ The emulator itself is accurate: on white input (where the band holds 1/16 of th
 
 ## 3. Diagnosis on the CPU (TinyShakespeare)
 
-Each change was tested on a small model first (4 layers, width 128, 600 steps; calibration 50 to 99, so the optics starts at step 100). Final validation loss at step 600 (clip rate over the last interval):
+TinyShakespeare is about 1 MB of Shakespeare's plays, read one character at a time: a small, fast test set, so each idea could be tried in about 12 minutes on the CPU without spending GPU time. Each change was tested on a small model first (4 layers, width 128, 600 steps; calibration 50 to 99, so the optics starts at step 100). Final validation loss at step 600 (clip rate over the last interval):
 
 | Configuration (8 planes, ENOB 8 unless stated) | Final loss |
 |---|---|
@@ -71,4 +71,27 @@ The optional full-scale re-set (`fs_every`) uses the delta's mean square over th
 
 ## 6. The rerun (TinyStories, GPU)
 
-The optics stage was rerun with full scale re-set every 100 steps and feedback of the band sent: ENOB 6, 8, 10 and 12 with 8 planes; 4 and 12 planes at ENOB 8; and feedback of the band sent with the full scale fixed (ENOB 8, 8 planes). The diverged runs stay in the results as the failure mode. Results: `results/tinystories-gpu/results.md`, section 3.
+The optics stage was rerun with the full scale re-set every 100 steps and feedback of the band sent, plus feedback of the band sent with the full scale fixed, and a control with perfect optics (no quantisation, no noise), which is C with E's power-of-2 chunking. One seed each. From `results/tinystories-gpu/results.md`, sections 1 and 3:
+
+| Configuration | Final loss | Clip rate (whole run) |
+|---|---|---|
+| C, exact band, 1-D 256 (3 seeds) | 3.124 ± 0.008 | – |
+| E, perfect optics (control) | 3.141 | 0% |
+| E, ENOB 6, 8 planes | 3.423 | 0.28% |
+| E, ENOB 8, 8 planes | 3.017 | 0.29% |
+| E, ENOB 10, 8 planes | 2.878 | 0.30% |
+| E, ENOB 12, 8 planes | 2.905 | 0.30% |
+| E, ENOB 8, 4 planes | 3.137 | 0.22% |
+| E, ENOB 8, 12 planes | 3.024 | 0.30% |
+| E, ENOB 8, 8 planes, full scale fixed | 3.021 | 1.34% |
+
+What it shows:
+
+1. **Feedback of the band sent is the fix.** Every repaired run trains; clipping stays near 0.3%.
+2. **Re-setting the full scale adds nothing** once the errors are fed back: 3.017 with it, 3.021 without (ENOB 8). With the full scale fixed, about 1.3% of inputs clip, and the clipping error is corrected like any other.
+3. **Below ENOB 8 the noise costs loss** (ENOB 6: 3.423, 0.3 above the exact band). Four planes cost 0.12 against eight; twelve gain nothing.
+4. **From ENOB 8 up, the optics band ends below the exact band**, by up to 0.25 (ENOB 10). The control rules out the chunking difference: perfect optics gives 3.141, 0.017 above the exact band's mean, about two of its seed standard deviations and far from the optics runs' gains (the control ran on a T4, the others on an A100, and GPU runs are not bit-identical).
+
+Why would an inexact band do better than the exact one? A hypothesis, not tested here: quantisation and clipping are non-linear, so the values the optics produces carry a little of the large out-of-band residual (section 2) into the 16 positions sent; with feedback of the band sent, that part of the residual is then removed from the sender's delta, so over many steps some out-of-band information reaches the model that the exact band never sends. That fits the random fixed band (2.700) beating the low band (3.158): a fixed band loses by sending the same positions forever, and anything that leaks other information helps. Against it: on TinyShakespeare the repaired optics ended slightly *above* the exact band (2.520 to 2.535 against 2.464), and every E rerun is a single seed. Testing it would take several seeds and a measurement of how much out-of-band energy the sent values carry.
+
+None of this rescues the fixed band: the best optics run (2.878) is still 1.09 above top-k (1.785).

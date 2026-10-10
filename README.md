@@ -2,7 +2,7 @@
 
 Can DeMo's top-k selection be replaced by a **fixed frequency band**, which needs no comparisons and so suits a photonic link module, without losing convergence? And how much error can an emulated analogue optical transform add before it hurts?
 
-DeMo (Peng et al., [arXiv:2411.19870](https://arxiv.org/abs/2411.19870), ICLR 2026) compresses each worker's momentum with a chunked DCT and keeps the top-k coefficients of each chunk. Optalysys's compute-in-transit module (Kundu et al., [arXiv:2608.21536](https://arxiv.org/abs/2608.21536)) lists FFT, NTT, add, multiply, MAC and modular arithmetic, but no comparisons, so it cannot do top-k. A fixed band is a gather: the same positions in every chunk, every step. This repository trains small GPTs with simulated data parallelism and measures what that substitution costs.
+DeMo (Peng et al., [arXiv:2411.19870](https://arxiv.org/abs/2411.19870), ICLR 2026) compresses each worker's momentum with a chunked DCT and keeps the top-k coefficients of each chunk. A photonic link module (Kundu et al., [arXiv:2608.21536](https://arxiv.org/abs/2608.21536)) lists FFT, NTT, add, multiply, MAC and modular arithmetic, but no comparisons, so it cannot do top-k. A fixed band is a gather: the same positions in every chunk, every step. This repository trains small GPTs with simulated data parallelism and measures what that substitution costs.
 
 **Status: complete.** The full results are in [results/tinystories-gpu/results.md](results/tinystories-gpu/results.md), written by `experiment/analyse.py`; every number below comes from there.
 

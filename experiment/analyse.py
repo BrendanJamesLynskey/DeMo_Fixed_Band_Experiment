@@ -59,6 +59,12 @@ def describe(cfg: dict) -> str:
     return s
 
 
+def dense_wire(hdr: dict, cfg: dict) -> float:
+    """Bytes a worker sends to all-reduce the dense gradient on a ring: the baseline for the wire ratio."""
+    w = cfg["workers"]
+    return 2 * (w - 1) / w * hdr["dense_bytes_per_step"]
+
+
 def summarise(runs):
     groups = defaultdict(list)
     for r in runs:
@@ -81,6 +87,7 @@ def summarise(runs):
                    payload_int64_per_step=hdr["payload_bytes_int64_per_step"],
                    wire_per_step=hdr["wire_bytes_per_step"],
                    ratio_vs_dense=hdr["dense_bytes_per_step"] / hdr["payload_bytes_per_step"],
+                   wire_ratio_vs_dense=dense_wire(hdr, cfg) / hdr["wire_bytes_per_step"],
                    steps_to_target=stats.fmean(reached) if len(reached) == len(rs) else None,
                    reached=f"{len(reached)}/{len(rs)}",
                    seconds=stats.fmean(r["seconds"] for r in rs))
@@ -140,15 +147,19 @@ def write(dataset: str):
          "Bytes are per worker per step, values in BF16 (2 bytes). *Payload* = what a worker originates; top-k "
          "indices are counted at the bytes needed for a position within a chunk (the reference code sends int64, "
          "shown separately). *Wire* = bytes a worker sends in a ring collective (all-reduce for A, all-gather "
-         "for the DeMo variants).\n",
+         "for the DeMo variants); *wire vs dense* compares it with a ring all-reduce of the dense gradient. An "
+         "all-gather's wire bytes grow with the number of workers, an all-reduce's do not, so the wire ratio is "
+         "smaller than the payload ratio.\n",
          "## 1. Loss against communication\n",
          f"Target = the AdamW baseline's mean final validation loss, {fmt(target)}.\n",
-         "| Configuration | Seeds | Final val loss (mean ± sd) | Payload / step (bytes) | vs dense | Steps to target | Payload to target (MB) |",
-         "|---|---|---|---|---|---|---|"]
+         "| Configuration | Seeds | Final val loss (mean ± sd) | Payload / step (bytes) | vs dense | "
+         "Wire / step (bytes) | Wire vs dense | Steps to target | Payload to target (MB) |",
+         "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         btt = r.get("bytes_to_target")
         L.append(f"| {r['label']} | {r['seeds']} | {fmt(r['final_val'])} ± {fmt(r['final_val_sd'])} | "
                  f"{r['payload_per_step']:,} | {fmt(r['ratio_vs_dense'], 1)}x | "
+                 f"{r['wire_per_step']:,.0f} | {fmt(r['wire_ratio_vs_dense'], 1)}x | "
                  f"{fmt(r['steps_to_target'], 0) if r['steps_to_target'] else 'not reached (' + r['reached'] + ')'} | "
                  f"{fmt(btt / 1e6, 1) if btt else 'n/a'} |")
     topk = [r for r in rows if r["variant"] == "topk"]

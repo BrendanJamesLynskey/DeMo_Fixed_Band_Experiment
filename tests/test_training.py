@@ -175,3 +175,27 @@ def test_optics_state_builds_for_width_384():
     st = T.DeMoState(cfg, params)
     assert st.ch["ln"].m == 128 and st.ch["w"].m == 256
     st.finish_calibration()
+
+
+@pytest.mark.parametrize("feedback", ["exact", "sent"])
+def test_optics_error_feedback_removes_exact_or_sent_band(feedback):
+    """After calibration, the delta loses the exact band (feedback="exact") or the optics' noisy
+    output (feedback="sent"): with "sent", delta + what was sent equals the pre-step delta."""
+    shapes = {"w": (128, 128)}
+    params = {"w": torch.zeros(shapes["w"])}
+    cfg = T.RunConfig(variant="optics", band="low", chunk_mode="1d", chunk=256, workers=2,
+                      calib_start=0, calib_steps=1, enob=6.0, planes=8, feedback=feedback, fs_every=2)
+    st = T.DeMoState(cfg, params)
+    T.demo_step(st, params, _grads(params, 2, seed=1), 1e-3, 0, torch.Generator())      # calibrates
+    before = st.delta["w"].clone() * cfg.decay + _grads(params, 2, seed=2)["w"] * 1e-3
+    ch, pos = st.ch["w"], st.pos["w"]
+    gen = torch.Generator().manual_seed(3)
+    sent = st.emu["w"](ch.to_chunks(before).reshape(-1, ch.m), torch.Generator().manual_seed(3))
+    T.demo_step(st, params, _grads(params, 2, seed=2), 1e-3, 1, gen)
+    left = ch.encode(st.delta["w"])[..., pos].reshape(-1, len(pos))
+    exact = ch.encode(before)[..., pos].reshape(-1, len(pos))
+    if feedback == "exact":
+        assert left.abs().max() < 1e-6
+    else:
+        assert torch.allclose(left, exact - sent, atol=1e-6)
+        assert (exact - sent).abs().max() > 1e-6

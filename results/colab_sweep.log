@@ -1,0 +1,183 @@
+5 runs for results/tinystories-gpu-lr; 0 to do
+learning rates chosen: {'demo': 0.001, 'adamw': 0.003}
+15 runs for results/tinystories-gpu; 2 to do
+done tinystories-calib-calib-k16-2d64-lr0.001-s2 in 809 s
+done tinystories-band-low-k16-1d256-lr0.001-s2 in 747 s
+6 runs for results/tinystories-gpu; 6 to do
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 exited with 1; resuming (attempt 1)
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 exited with 1; resuming (attempt 2)
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 exited with 1; resuming (attempt 3)
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 exited with 1; resuming (attempt 4)
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 exited with 1; resuming (attempt 5)
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 exited with 1; resuming (attempt 6)
+giving up on tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0
+Traceback (most recent call last):
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/sweep.py", line 177, in main
+    run(cfg, RESULTS / a.outdir / (cfg.name() + ".jsonl"))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 354, in run
+    demo_step(st, {n: p.detach() for n, p in params.items()}, gbuf, lr, step, gen,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              diag=(step + 1) % cfg.diag_every == 0)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 211, in demo_step
+    st.finish_calibration()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/train.py", line 148, in finish_calibration
+    emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
+  File "/content/DeMo_Fixed_Band_Experiment/experiment/compressors.py", line 235, in __init__
+    raise ValueError(f"chunk side {side} must be a power of 2 no larger than {cfg.native}")
+ValueError: chunk side 192 must be a power of 2 no larger than 256
+run tinystories-optics-low-k16-1d256-enob8.0-p8-lr0.001-s0 exited with 1; resuming (attempt 1)
+5 runs for results/tinystories-gpu-lr; 0 to do
+learning rates chosen: {'demo': 0.001, 'adamw': 0.003}
+15 runs for results/tinystories-gpu; 0 to do
+6 runs for results/tinystories-gpu; 6 to do
+done tinystories-optics-low-k16-1d256-enob6.0-p8-lr0.001-s0 in 906 s
+done tinystories-optics-low-k16-1d256-enob8.0-p8-lr0.001-s0 in 906 s
+done tinystories-optics-low-k16-1d256-enob10.0-p8-lr0.001-s0 in 908 s
+done tinystories-optics-low-k16-1d256-enob12.0-p8-lr0.001-s0 in 908 s
+done tinystories-optics-low-k16-1d256-enob8.0-p4-lr0.001-s0 in 870 s
+done tinystories-optics-low-k16-1d256-enob8.0-p12-lr0.001-s0 in 981 s
+4 runs for results/tinystories-gpu; 4 to do
+done tinystories-band-zigzag-k16-2d64-lr0.001-s0 in 827 s
+done tinystories-band-high-k16-2d64-lr0.001-s0 in 813 s
+done tinystories-band-random-k16-2d64-lr0.001-s0 in 814 s
+done tinystories-band-low-k16-1d64-lr0.001-s0 in 772 s

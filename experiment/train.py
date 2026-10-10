@@ -70,6 +70,11 @@ class RunConfig:
     enob: float | None = 8.0         # E
     planes: int | None = 8           # E
     kappa: float = 4.0               # E
+    fs_every: int = 0                # E: 0 = full scale fixed at calibration; N = re-set every N steps
+                                     #    from the mean square of the delta over the last N (a MAC: no comparisons)
+    feedback: str = "exact"          # E: "exact" = error feedback removes the exact band; "sent" = removes
+                                     #    what the optics produced (each worker receives its own values back
+                                     #    in the all-gather, so it can)
     native: int = 256                # E
     seed: int = 0
     eval_every: int = 50
@@ -88,6 +93,10 @@ class RunConfig:
             parts += [f"k{round(1 / self.keep)}", f"{self.chunk_mode}{self.chunk}"]
         if self.variant == "optics":
             parts += [f"enob{self.enob}", f"p{self.planes}"]
+            if self.fs_every:
+                parts.append(f"agc{self.fs_every}")
+            if self.feedback != "exact":
+                parts.append(f"fb{self.feedback}")
         parts += [f"lr{self.lr:g}", f"s{self.seed}"]
         return "-".join(str(p) for p in parts)
 
@@ -152,7 +161,17 @@ class DeMoState:
                 emu = C.OpticsEmulator(ch, self.pos[n], C.OpticsConfig(cfg.planes, cfg.enob, cfg.kappa, cfg.native))
                 emu.calibrate(math.sqrt(self.sumsq[n] / max(1, self.count[n])))
                 self.emu[n] = emu
+                if cfg.fs_every:
+                    self.sumsq[n], self.count[n] = 0.0, 0
         self.calibrated = True
+
+    def recalibrate(self) -> None:
+        """Automatic gain control for E: a new input full scale from the delta's mean square since
+        the last setting. The delta keeps growing long after calibration (error feedback holds the
+        out-of-band residual, decaying only by `decay` per step), so a full scale fixed early saturates."""
+        for n, emu in self.emu.items():
+            emu.calibrate(math.sqrt(self.sumsq[n] / max(1, self.count[n])))
+            self.sumsq[n], self.count[n] = 0.0, 0
 
     def state(self):
         return {"delta": self.delta, "shadow": self.shadow, "energy": self.energy, "sumsq": self.sumsq, "count": self.count,
@@ -192,6 +211,7 @@ def demo_step(st: DeMoState, params: dict, grads: dict, lr: float, step: int, ge
                                "grad": ch.encode(g[0])}
         if calibrating:
             st.energy[n] += (coef.double() ** 2).sum((0, 1))
+        if calibrating or (cfg.fs_every and st.calibrated and cfg.variant == "optics"):
             st.sumsq[n] += float((d.double() ** 2).sum())
             st.count[n] += d.numel()
         if cfg.variant == "topk":
@@ -204,15 +224,20 @@ def demo_step(st: DeMoState, params: dict, grads: dict, lr: float, step: int, ge
             tx = st.emu[n](ch.to_chunks(d).reshape(W * ch.chunks, ch.m), gen).reshape(W, ch.chunks, k)
         else:
             tx = val
-        # error feedback: each sender removes the exact coefficients it sent (in E it cannot see
-        # the optics' noise, so the noise is not fed back)
-        d.sub_(ch.decode(torch.zeros_like(coef).scatter_(-1, idx, val)))
+        # error feedback: each sender removes the exact band coefficients, or in E with
+        # feedback="sent" the values the optics actually produced (returned to it by the all-gather),
+        # so the optics' quantisation, clipping and noise are fed back too
+        fb = tx if cfg.feedback == "sent" else val
+        d.sub_(ch.decode(torch.zeros_like(coef).scatter_(-1, idx, fb)))
         # every worker's contributions to a chunk, side by side: worker 0's k, then worker 1's ...
         agg = C.scatter_mean(ch.chunks, ch.m, [idx.transpose(0, 1).reshape(ch.chunks, W * k)],
                              [tx.transpose(0, 1).reshape(ch.chunks, W * k)], p.dtype)
         p.add_(ch.decode(agg).sign(), alpha=-lr)
     if calibrating and step + 1 >= cfg.calib_start + cfg.calib_steps:
         st.finish_calibration()
+    elif (cfg.fs_every and cfg.variant == "optics" and st.calibrated
+          and (step + 1 - cfg.calib_start - cfg.calib_steps) % cfg.fs_every == 0):
+        st.recalibrate()
 
 
 @torch.no_grad()

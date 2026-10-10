@@ -51,6 +51,9 @@ def describe(cfg: dict) -> str:
         s += f", {'2-D ' + str(cfg['chunk']) + 'x' + str(cfg['chunk']) if cfg['chunk_mode'] == '2d' else '1-D ' + str(cfg['chunk']) + '-point'} chunks"
     if v == "optics":
         s += f", ENOB {cfg['enob']:g}, {cfg['planes']} planes"
+        fs = cfg.get("fs_every", 0)
+        s += f", full scale {'re-set every ' + str(fs) + ' steps' if fs else 'fixed'}"
+        s += f", feedback of the {'band sent' if cfg.get('feedback', 'exact') == 'sent' else 'exact band'}"
     return s
 
 
@@ -167,9 +170,12 @@ def write(dataset: str):
     opt = [r for r in rows if r["variant"] == "optics"]
     if opt:
         L += ["\n## 3. Emulated optics: ENOB and bit planes\n",
-              "Fixed input full scale calibrated once (kappa x RMS over the calibration window), saturation, exact "
-              "binary bit planes, noisy readout per plane at the given ENOB, weighted recombination. Planes = optical "
-              "passes per chunk.\n",
+              "Input full scale kappa x RMS of the delta, either calibrated once over the calibration window "
+              "(*fixed*) or re-set from the mean square over each interval (*re-set*); saturation, exact binary bit "
+              "planes, noisy readout per plane at the given ENOB, weighted recombination. Planes = optical passes per "
+              "chunk. *Feedback of the exact band*: each sender's error feedback removes the exact band, so the "
+              "optics' errors are never corrected; *of the band sent*: it removes what the optics produced, which "
+              "it receives back in the all-gather.\n",
               "| Configuration | Final val loss | Clip rate (whole run) | Clip rate (last interval) |",
               "|---|---|---|---|"]
         for r in sorted(opt, key=lambda r: r["label"]):
@@ -223,10 +229,13 @@ def plots(runs, rows, out: Path):
         for g, rs in groups.items():
             c = rs[0]["cfg"]
             if c["variant"] == "optics":
-                by_planes[c["planes"]].append((c["enob"], stats.fmean(r["evals"][-1]["val_loss"] for r in rs)))
-        for p, pts in sorted(by_planes.items()):
+                key = (c.get("feedback", "exact"), c.get("fs_every", 0), c["planes"])
+                by_planes[key].append((c["enob"], stats.fmean(r["evals"][-1]["val_loss"] for r in rs)))
+        for (fb, fs, p), pts in sorted(by_planes.items()):
             pts.sort()
-            ax.plot([e for e, _ in pts], [v for _, v in pts], "o-", label=f"{p} planes")
+            ax.plot([e for e, _ in pts], [v for _, v in pts], "o-" if fb == "sent" else "x:",
+                    label=f"{p} planes, feedback {fb}, full scale {'re-set' if fs else 'fixed'}")
+        ax.set_yscale("log")
         ref = [r for r in rows if r["variant"] == "band" and "1-D 256" in r["label"]]
         if ref:
             ax.axhline(ref[0]["final_val"], ls="--", color="grey", label="exact band (C, 1-D 256)")

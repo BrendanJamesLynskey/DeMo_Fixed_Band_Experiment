@@ -84,10 +84,15 @@ def grid(name: str, dataset: str, seeds=(0, 1, 2)) -> list[RunConfig]:
                      cfg("calib", s, keep=keep, band="calib"),                   # D
                      cfg("band", s, keep=keep, band="low", chunk_mode="1d", chunk=256)]   # C, 1-D (module)
     if name in ("main", "optics"):
-        for enob in (6.0, 8.0, 10.0, 12.0):                                      # E: ENOB tolerance
-            runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=enob, planes=8))
-        for planes in (4, 12):                                                   # E: planes
-            runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=8.0, planes=planes))
+        # first as designed (full scale fixed at calibration, feedback of the exact band), which
+        # diverged; then with the full scale re-set every 100 steps and feedback of the band sent
+        for fix in (dict(), dict(fs_every=100, feedback="sent")):
+            for enob in (6.0, 8.0, 10.0, 12.0):                                  # E: ENOB tolerance
+                runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=enob, planes=8, **fix))
+            for planes in (4, 12):                                               # E: planes
+                runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=8.0, planes=planes, **fix))
+        # which of the two changes matters: feedback of the band sent with the full scale fixed
+        runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=8.0, planes=8, feedback="sent"))
     if name in ("main", "shapes"):
         for shape in ("zigzag", "high", "random"):                               # F
             runs.append(cfg("band", 0, keep=keep, band=shape))

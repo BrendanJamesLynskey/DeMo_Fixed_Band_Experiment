@@ -50,6 +50,8 @@ def describe(cfg: dict) -> str:
     if v != "adamw":
         s += f", {'2-D ' + str(cfg['chunk']) + 'x' + str(cfg['chunk']) if cfg['chunk_mode'] == '2d' else '1-D ' + str(cfg['chunk']) + '-point'} chunks"
     if v == "optics":
+        if cfg["enob"] is None and cfg["planes"] is None:
+            return s + ", perfect optics (no quantisation or noise: C with power-of-2 chunks)"
         s += f", ENOB {cfg['enob']:g}, {cfg['planes']} planes"
         fs = cfg.get("fs_every", 0)
         s += f", full scale {'re-set every ' + str(fs) + ' steps' if fs else 'fixed'}"
@@ -88,7 +90,11 @@ def summarise(runs):
         if clips:
             row["clip_rate"] = stats.fmean(clips)
             row["clip_rate_last"] = stats.fmean(r["evals"][-1]["clip_rate_interval"] for r in rs)
+        # within E: the fixed and repaired designs apart, then planes, then ENOB
+        row["sort"] = ((cfg.get("feedback", "exact"), cfg.get("fs_every", 0), cfg["planes"] or 0, cfg["enob"] or 99)
+                       if cfg["variant"] == "optics" else ())
         rows.append(row)
+    rows.sort(key=lambda r: (r["label"][0], r["sort"], r["label"]))     # A to F
     return rows, target
 
 
@@ -178,7 +184,7 @@ def write(dataset: str):
               "it receives back in the all-gather.\n",
               "| Configuration | Final val loss | Clip rate (whole run) | Clip rate (last interval) |",
               "|---|---|---|---|"]
-        for r in sorted(opt, key=lambda r: r["label"]):
+        for r in opt:
             L.append(f"| {r['label']} | {fmt(r['final_val'])} | {fmt(100 * r['clip_rate'], 2)}% | "
                      f"{fmt(100 * r['clip_rate_last'], 2)}% |")
 
@@ -228,7 +234,7 @@ def plots(runs, rows, out: Path):
         by_planes = defaultdict(list)
         for g, rs in groups.items():
             c = rs[0]["cfg"]
-            if c["variant"] == "optics":
+            if c["variant"] == "optics" and c["enob"] is not None and c["planes"] is not None:
                 key = (c.get("feedback", "exact"), c.get("fs_every", 0), c["planes"])
                 by_planes[key].append((c["enob"], stats.fmean(r["evals"][-1]["val_loss"] for r in rs)))
         for (fb, fs, p), pts in sorted(by_planes.items()):

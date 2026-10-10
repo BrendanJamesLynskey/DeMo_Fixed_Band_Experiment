@@ -93,6 +93,9 @@ def grid(name: str, dataset: str, seeds=(0, 1, 2)) -> list[RunConfig]:
                 runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=8.0, planes=planes, **fix))
         # which of the two changes matters: feedback of the band sent with the full scale fixed
         runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=8.0, planes=8, feedback="sent"))
+        # control: perfect optics (no quantisation, no noise) is C with E's power-of-2 chunking, so
+        # any difference between it and C comes from the chunking, not the optics
+        runs.append(cfg("optics", 0, keep=keep, band="low", chunk_mode="1d", chunk=256, enob=None, planes=None))
     if name in ("main", "shapes"):
         for shape in ("zigzag", "high", "random"):                               # F
             runs.append(cfg("band", 0, keep=keep, band=shape))

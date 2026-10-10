@@ -181,3 +181,15 @@ done tinystories-band-zigzag-k16-2d64-lr0.001-s0 in 827 s
 done tinystories-band-high-k16-2d64-lr0.001-s0 in 813 s
 done tinystories-band-random-k16-2d64-lr0.001-s0 in 814 s
 done tinystories-band-low-k16-1d64-lr0.001-s0 in 772 s
+5 runs for results/tinystories-gpu-lr; 0 to do
+learning rates chosen: {'adamw': 0.003, 'demo': 0.001}
+15 runs for results/tinystories-gpu; 0 to do
+13 runs for results/tinystories-gpu; 7 to do
+done tinystories-optics-low-k16-1d256-enob6.0-p8-agc100-fbsent-lr0.001-s0 in 936 s
+done tinystories-optics-low-k16-1d256-enob8.0-p8-agc100-fbsent-lr0.001-s0 in 933 s
+done tinystories-optics-low-k16-1d256-enob10.0-p8-agc100-fbsent-lr0.001-s0 in 947 s
+done tinystories-optics-low-k16-1d256-enob12.0-p8-agc100-fbsent-lr0.001-s0 in 939 s
+done tinystories-optics-low-k16-1d256-enob8.0-p4-agc100-fbsent-lr0.001-s0 in 897 s
+done tinystories-optics-low-k16-1d256-enob8.0-p12-agc100-fbsent-lr0.001-s0 in 1013 s
+done tinystories-optics-low-k16-1d256-enob8.0-p8-fbsent-lr0.001-s0 in 909 s
+4 runs for results/tinystories-gpu; 0 to do

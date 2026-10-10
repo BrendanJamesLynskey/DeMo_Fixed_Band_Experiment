@@ -157,6 +157,8 @@ def write(dataset: str):
         L.append(f"\n* Top-k with int64 indices, as the reference code sends them: {t['payload_int64_per_step']:,} "
                  f"bytes per step, {fmt(t['payload_int64_per_step'] / t['payload_per_step'], 1)}x the compact count.")
 
+    L += ladder(runs, rows)
+
     L += ["\n## 2. Captured energy on real momentum\n",
           f"Share of energy kept by each selector at the same k, on worker 0's tensors, averaged over diagnostics "
           f"after step {after}. *momentum* = a plain momentum of the same decay, never compressed; *delta* = what "
@@ -195,6 +197,43 @@ def write(dataset: str):
         indent=1, default=lambda x: round(x, 6) if isinstance(x, float) else x))
     plots(runs, rows, out)
     print("\n".join(L))
+
+
+def ladder(runs, rows) -> list[str]:
+    """Steps (and payload) to first reach each of a ladder of losses: the final losses of the main
+    configurations, so every variant has targets it reaches. Evaluations are every eval_every steps,
+    so a step count is the first evaluation at or below the target."""
+    groups = defaultdict(list)
+    for r in runs:
+        groups[r["group"]].append(r)
+    marks = {}
+    for r in rows:
+        if r["seeds"] > 1 and r["final_val"] is not None:          # the multi-seed rows: A, B, C, D
+            marks.setdefault(r["variant"] + r["label"], (r["final_val"], r["label"][:1]))
+    targets = sorted({round(v, 3): k for v, k in marks.values()}.items(), reverse=True)
+    if not targets:
+        return []
+    every = runs[0]["cfg"]["eval_every"]
+    L = ["\n### Steps to reach a loss\n",
+         f"Targets are the mean final losses of the multi-seed configurations. Steps = the first evaluation (every "
+         f"{every} steps) at or below the target, mean over seeds, shown only when every seed reaches it; payload = "
+         "steps x bytes each worker originates per step.\n",
+         "| Configuration | " + " | ".join(f"to {v:.3f} ({k})" for v, k in targets) + " |",
+         "|---|" + "---|" * len(targets)]
+    for r in rows:
+        if r["variant"] == "optics" and "feedback of the exact band" in r["label"]:
+            continue                                                  # diverged; nothing to reach
+        rs = groups[r["group"]]
+        cells = []
+        for v, _ in targets:
+            hits = [next((e["step"] for e in x["evals"] if e["val_loss"] <= v), None) for x in rs]
+            if all(h is not None for h in hits):
+                st = stats.fmean(hits)
+                cells.append(f"{st:,.0f} ({st * r['payload_per_step'] / 1e9:.2f} GB)")
+            else:
+                cells.append("–")
+        L.append(f"| {r['label']} | " + " | ".join(cells) + " |")
+    return L
 
 
 def plots(runs, rows, out: Path):

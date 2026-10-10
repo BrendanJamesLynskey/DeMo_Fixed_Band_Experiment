@@ -38,6 +38,30 @@ Target = the AdamW baseline's mean final validation loss, 1.646.
 
 * Top-k with int64 indices, as the reference code sends them: 9,895,920 bytes per step, 2.5x the compact count.
 
+### Steps to reach a loss
+
+Targets are the mean final losses of the multi-seed configurations. Steps = the first evaluation (every 200 steps) at or below the target, mean over seeds, shown only when every seed reaches it; payload = steps x bytes each worker originates per step.
+
+| Configuration | to 3.158 (C) | to 3.124 (C) | to 3.087 (D) | to 1.785 (B) | to 1.646 (A) |
+|---|---|---|---|---|---|
+| A  AdamW, all-reduce | 400 (12.67 GB) | 400 (12.67 GB) | 400 (12.67 GB) | 2,000 (63.33 GB) | – |
+| B  DeMo, top-k, 2-D 64x64 chunks | 400 (1.58 GB) | 400 (1.58 GB) | 400 (1.58 GB) | – | – |
+| C  DeMo, fixed band, 1-D 256-point chunks | 2,667 (5.28 GB) | – | – | – | – |
+| C  DeMo, fixed band, 1-D 64-point chunks | 2,800 (5.54 GB) | – | – | – | – |
+| C  DeMo, fixed band, 2-D 64x64 chunks | – | – | – | – | – |
+| D  DeMo, calibrated band, 2-D 64x64 chunks | 2,533 (5.01 GB) | 2,667 (5.28 GB) | – | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, perfect optics (no quantisation or noise: C with power-of-2 chunks) | 2,800 (5.54 GB) | – | – | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 8, 8 planes, full scale fixed, feedback of the band sent | 1,800 (3.56 GB) | 2,000 (3.96 GB) | 2,200 (4.35 GB) | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 8, 4 planes, full scale re-set every 100 steps, feedback of the band sent | 2,600 (5.15 GB) | – | – | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 6, 8 planes, full scale re-set every 100 steps, feedback of the band sent | – | – | – | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 8, 8 planes, full scale re-set every 100 steps, feedback of the band sent | 1,800 (3.56 GB) | 2,000 (3.96 GB) | 2,200 (4.35 GB) | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 10, 8 planes, full scale re-set every 100 steps, feedback of the band sent | 1,600 (3.17 GB) | 1,800 (3.56 GB) | 1,800 (3.56 GB) | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 12, 8 planes, full scale re-set every 100 steps, feedback of the band sent | 1,800 (3.56 GB) | 2,000 (3.96 GB) | 2,000 (3.96 GB) | – | – |
+| E  DeMo, band via emulated optics, 1-D 256-point chunks, ENOB 8, 12 planes, full scale re-set every 100 steps, feedback of the band sent | 2,000 (3.96 GB) | 2,000 (3.96 GB) | 2,200 (4.35 GB) | – | – |
+| F  DeMo, fixed high band, 2-D 64x64 chunks | – | – | – | – | – |
+| F  DeMo, fixed random band, 2-D 64x64 chunks | 1,200 (2.38 GB) | 1,200 (2.38 GB) | 1,400 (2.77 GB) | – | – |
+| F  DeMo, fixed zigzag band, 2-D 64x64 chunks | 2,200 (4.35 GB) | 2,400 (4.75 GB) | 2,600 (5.15 GB) | – | – |
+
 ## 2. Captured energy on real momentum
 
 Share of energy kept by each selector at the same k, on worker 0's tensors, averaged over diagnostics after step 200. *momentum* = a plain momentum of the same decay, never compressed; *delta* = what DeMo actually compresses (momentum plus the residual that error feedback keeps); *grad* = the step's gradient. A random set keeps about the keep fraction.

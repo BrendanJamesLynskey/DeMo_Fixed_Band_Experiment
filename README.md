@@ -8,24 +8,24 @@ DeMo (Peng et al., [arXiv:2411.19870](https://arxiv.org/abs/2411.19870), ICLR 20
 
 ## Results
 
-TinyStories, a 16M-parameter GPT, 8 simulated workers, 3,000 steps. Final validation loss (mean ± sd over seeds), and the bytes each worker originates per step:
+TinyStories, a 16M-parameter GPT, 8 simulated workers, 3,000 steps. Final validation loss (mean ± sd over seeds), the bytes each worker originates per step (payload), and the bytes it sends in its ring collective with 8 workers (wire: an all-reduce for A, an all-gather for the DeMo variants; from section 1 of results.md):
 
-| | Variant | Seeds | Final loss | Payload / step | vs dense |
-|---|---|---|---|---|---|
-| A | AdamW, dense all-reduce | 3 | 1.646 ± 0.005 | 31.7 MB | 1x |
-| B | DeMo, top-k (2-D 64x64) | 3 | 1.785 ± 0.007 | 3.96 MB | 8x |
-| C | Fixed low band (2-D 64x64) | 3 | 3.158 ± 0.009 | 1.98 MB | 16x |
-| C | Fixed low band (1-D 256) | 3 | 3.124 ± 0.008 | 1.98 MB | 16x |
-| D | Calibrated band (2-D 64x64) | 3 | 3.087 ± 0.027 | 1.98 MB | 16x |
-| E | Emulated optics, repaired, ENOB 6 / 8 / 10 / 12 | 1 each | 3.423 / 3.017 / 2.878 / 2.905 | 1.98 MB | 16x |
-| F | Fixed random band (2-D 64x64) | 1 | 2.700 | 1.98 MB | 16x |
+| | Variant | Seeds | Final loss | Payload / step | vs dense | Wire / step | Wire vs dense |
+|---|---|---|---|---|---|---|---|
+| A | AdamW, dense all-reduce | 3 | 1.646 ± 0.005 | 31.7 MB | 1x | 55.4 MB | 1.0x |
+| B | DeMo, top-k (2-D 64x64) | 3 | 1.785 ± 0.007 | 3.96 MB | 8x | 27.7 MB | 2.0x |
+| C | Fixed low band (2-D 64x64) | 3 | 3.158 ± 0.009 | 1.98 MB | 16x | 13.9 MB | 4.0x |
+| C | Fixed low band (1-D 256) | 3 | 3.124 ± 0.008 | 1.98 MB | 16x | 13.9 MB | 4.0x |
+| D | Calibrated band (2-D 64x64) | 3 | 3.087 ± 0.027 | 1.98 MB | 16x | 13.9 MB | 4.0x |
+| E | Emulated optics, repaired, ENOB 6 / 8 / 10 / 12 | 1 each | 3.423 / 3.017 / 2.878 / 2.905 | 1.98 MB | 16x | 13.9 MB | 4.0x |
+| F | Fixed random band (2-D 64x64) | 1 | 2.700 | 1.98 MB | 16x | 13.9 MB | 4.0x |
 
 - **A fixed band does not replace top-k.** The low, zig-zag, high and calibrated bands end 1.24 to 1.46 nats above top-k, and even a random fixed set of positions ends 0.92 above, at half top-k's bytes. The saving in bytes does not buy the loss back: no fixed band comes near top-k's loss at any point in the run.
 - **Per byte, top-k still wins.** Top-k reaches the 1-D fixed band's final loss (3.124) by step 400, after 1.58 GB per worker; the fixed band itself needs 2,667 steps and 5.28 GB just to reach 3.158, and not every seed gets to 3.124 (section 1 of results.md, *Steps to reach a loss*).
 - **Why:** on the momentum of the fixed-band runs, top-k at the same k would keep 0.64 of the energy in 2-D chunks; the fixed low band keeps 0.013, less than a random set of positions (0.065). The gradient's low band is better (0.31), but DeMo compresses a momentum, and with error feedback the delta it compresses holds almost nothing in the band (section 2 of results.md).
 - **Emulated optics:** as first designed, every run diverged; the cause and the fix (error feedback of the values actually sent) are in [docs/optics_investigation.md](docs/optics_investigation.md). Repaired, the optics band trains, and from ENOB 8 it ends slightly *below* the exact band it emulates; a perfect-optics control (3.141) rules out a chunking difference as the cause. The optics does not rescue the fixed band.
 
-Part of the [Compute in Transit series](https://github.com/BrendanJamesLynskey/LLM_Hub_Compute_in_Transit); the motivation is in [CiT 02, slides 09 and 10](https://brendanjameslynskey.github.io/CiT_02_Data_Movement_in_LLM_Training/#slide-09).
+Part of the [Compute in Transit series](https://github.com/BrendanJamesLynskey/LLM_Hub_Compute_in_Transit); the motivation is in [CiT 02, slides 09 and 10](https://brendanjameslynskey.github.io/CiT_02_Data_Movement_in_LLM_Training/#slide-09). What these steps and wire bytes mean in time and energy across data centres is simulated in [Training_Transit_Sim](https://github.com/BrendanJamesLynskey/Training_Transit_Sim) and [CiT 05](https://brendanjameslynskey.github.io/CiT_05_Training_Transit_Simulation/).
 
 ## Variants
 
